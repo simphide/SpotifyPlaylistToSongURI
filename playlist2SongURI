@@ -1,0 +1,42 @@
+#!/bin/bash
+
+#Refresh Token
+refresh_token=""
+encoded_client_secret=""
+
+#get access token by requesting new one and pipeing curl into /dev/null
+access_token=$(curl -H "Authorization: Basic $encoded_client_secret" -d grant_type=refresh_token -d refresh_token=$refresh_token https://accounts.spotify.com/api/token 2>/dev/null | jq --raw-output  ".access_token")
+
+#print banner
+base64 -d <<<"X19fX19fIF8gICAgICAgICAgICAgXyBfICAgICBfIF9fX19fICAgICBfX19fXyAgICAgICAgICAgICAgICAgICAgICAgDQp8IF9fXyBcIHwgICAgICAgICAgIHwgKF8pICAgfCB8XyAgIF98ICAgLyAgX19ffCAgICAgICAgICAgICAgICAgICAgICANCnwgfF8vIC8gfCBfXyBfIF8gICBffCB8XyBfX198IHxffCB8IF9fXyBcIGAtLS4gIF9fXyAgXyBfXyAgIF9fIF8gX19fIA0KfCAgX18vfCB8LyBfYCB8IHwgfCB8IHwgLyBfX3wgX198IHwvIF8gXCBgLS0uIFwvIF8gXHwgJ18gXCAvIF9gIC8gX198DQp8IHwgICB8IHwgKF98IHwgfF98IHwgfCBcX18gXCB8X3wgfCAoXykgL1xfXy8gLyAoXykgfCB8IHwgfCAoX3wgXF9fIFwNClxffCAgIHxffFxfXyxffFxfXywgfF98X3xfX18vXF9fXF8vXF9fXy9cX19fXy8gXF9fXy98X3wgfF98XF9fLCB8X19fLw0KICAgICAgICAgICAgICAgIF9fLyB8ICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgX18vIHwgICAgDQogICAgICAgICAgICAgICB8X19fLyAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIHxfX18vICAgICA="
+echo -e
+echo "Your access token: " $access_token #debug
+echo -e
+
+#if no params were given
+if [[ $1 == "" ]]
+  then
+    echo "Usage: ./playlist2SongURI <playlist> <file to save>"
+    exit
+fi
+
+#split given spotify URI
+URI=$1 
+URI=(${URI//:/ })
+
+#getting number of songs in playlist (limit is 1 to reduce traffic)
+total=$(curl -X GET "https://api.spotify.com/v1/users/${URI[2]}t/playlists/${URI[4]}/tracks?limit=1" -H "Authorization: Bearer $access_token" 2>/dev/null | jq --raw-output  ".total")
+numberOfSongs=$((($total+99)/100))
+
+#if there are more than 100 songs
+for ((i=0; i<$numberOfSongs; i++)); do 
+  curl -X GET "https://api.spotify.com/v1/users/${URI[2]}t/playlists/${URI[4]}/tracks?offset=$(($i*100))" -H "Authorization: Bearer $access_token" > /tmp/spotify-playlist.json
+  cat /tmp/spotify-playlist.json | jq --raw-output  ".items[] .track | .uri" >> /tmp/songsWithDuplicates.txt
+done
+
+#remove duplicats
+awk '!a[$0]++' /tmp/songsWithDuplicates.txt > /tmp/songsWithLocals.txt 
+#remove local files
+grep -v "local" /tmp/songsWithLocals.txt > $2
+#remove temp file
+rm /tmp/songsWithDuplicates.txt 
